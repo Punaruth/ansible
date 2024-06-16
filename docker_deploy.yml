@@ -1,0 +1,93 @@
+---
+- hosts: "Managed_host"
+  become: yes
+
+  tasks:
+    - name: Update apt package index
+      apt:
+        update_cache: yes
+
+    - name: Install prerequisites for Docker
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+        state: present
+
+    - name: Add Docker’s official GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+      notify: Update apt cache
+
+    - name: Update apt package index after adding Docker repo
+      apt:
+        update_cache: yes
+      when: "'Update apt cache' in ansible_run_tags"
+
+    - name: Install Docker CE
+      apt:
+        name: docker-ce
+        state: present
+      notify: Restart Docker
+
+    - name: Start Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Pull Apache Docker image
+      docker_image:
+        name: httpd
+        source: pull
+        state: present
+
+    - name: Create Docker network
+      docker_network:
+        name: custom_network
+        driver: bridge
+        ipam_config:
+          - subnet: 172.168.10.0/30
+            gateway: 172.168.10.1
+
+    - name: Creating a Persistent Volume Dir
+      file:
+        path: "/root/pv"
+        state: directory
+
+    - name: Copying the HTML code in the Directory
+      copy:
+        src: "/home/kali/Desktop/ansible/index.html"
+        dest: "/root/pv/index.html"
+
+    - name: Run Apache Docker container
+      docker_container:
+        name: apache_server
+        image: httpd
+        state: started
+        ports:
+          - "80:80"
+        networks:
+          - name: custom_network
+            ipv4_address: 172.168.10.2
+        volumes:
+          - /root/pv:/usr/local/apache2/htdocs/
+
+  handlers:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Restart Docker
+      service:
+        name: docker
+        state: restarted
+
